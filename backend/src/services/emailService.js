@@ -4,6 +4,18 @@ const nodemailer = require('nodemailer')
 const smtpPort = Number(process.env.SMTP_PORT || 587)
 const smtpFrom = process.env.SMTP_FROM || `"TimeBound" <${process.env.SMTP_USER}>`
 const rejectUnauthorized = String(process.env.SMTP_REJECT_UNAUTHORIZED || 'true').trim().toLowerCase() !== 'false'
+const emailProvider = String(process.env.EMAIL_PROVIDER || 'smtp').trim().toLowerCase()
+const brevoApiUrl = 'https://api.brevo.com/v3/smtp/email'
+
+const parseSender = (from) => {
+  const match = from.match(/^(.*?)\s*<(.+)>$/)
+  if (!match) return { email: from.trim() }
+
+  return {
+    name: match[1].replace(/^"|"$/g, '').trim(),
+    email: match[2].trim(),
+  }
+}
 
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
@@ -19,7 +31,13 @@ const transporter = nodemailer.createTransport({
 })
 
 // Verify SMTP connection (run once at startup)
-if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+if (emailProvider === 'brevo') {
+  if (process.env.BREVO_API_KEY) {
+    console.log('Email provider: brevo api')
+  } else {
+    console.warn('BREVO_API_KEY is missing. Brevo emails will fail until it is set.')
+  }
+} else if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
   console.log(`SMTP config: host=${process.env.SMTP_HOST}, port=${smtpPort}, secure=${smtpPort === 465}, rejectUnauthorized=${rejectUnauthorized}`)
 
   transporter.verify((err) => {
@@ -111,6 +129,33 @@ body {
 // ================== GENERIC SEND FUNCTION ==================
 const sendEmail = async ({ to, subject, html, text }) => {
   try {
+    if (emailProvider === 'brevo') {
+      const response = await fetch(brevoApiUrl, {
+        method: 'POST',
+        headers: {
+          accept: 'application/json',
+          'api-key': process.env.BREVO_API_KEY,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          sender: parseSender(smtpFrom),
+          to: [{ email: to }],
+          subject,
+          htmlContent: html,
+          textContent: text,
+        }),
+      })
+
+      const result = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(result.message || `Brevo API failed with status ${response.status}`)
+      }
+
+      console.log(`📩 Email sent to ${to} | ID: ${result.messageId || result.messageIds?.[0] || 'brevo-api'}`)
+      return true
+    }
+
     const info = await transporter.sendMail({
       from: smtpFrom,
       to,
