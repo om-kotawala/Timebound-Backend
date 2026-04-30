@@ -1,27 +1,37 @@
 const nodemailer = require('nodemailer')
 
 // ================== TRANSPORTER ==================
+const smtpPort = Number(process.env.SMTP_PORT || 587)
+const smtpFrom = process.env.SMTP_FROM || `"TimeBound" <${process.env.SMTP_USER}>`
+const rejectUnauthorized = String(process.env.SMTP_REJECT_UNAUTHORIZED || 'true').trim().toLowerCase() !== 'false'
+
 const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST ,
-  port: Number(process.env.SMTP_PORT),
-  secure: false,
+  host: process.env.SMTP_HOST,
+  port: smtpPort,
+  secure: smtpPort === 465,
   auth: {
     user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS // App Password required
+    pass: process.env.SMTP_PASS,
   },
   tls: {
-    rejectUnauthorized: false, // 🔥 FIX
+    rejectUnauthorized,
   },
 })
 
 // Verify SMTP connection (run once at startup)
-transporter.verify((err, success) => {
-  if (err) {
-    console.error('❌ SMTP Error:', err.message)
-  } else {
-    console.log('✅ SMTP Server is ready')
-  }
-})
+if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+  console.log(`SMTP config: host=${process.env.SMTP_HOST}, port=${smtpPort}, secure=${smtpPort === 465}, rejectUnauthorized=${rejectUnauthorized}`)
+
+  transporter.verify((err) => {
+    if (err) {
+      console.error('SMTP Error:', err.message)
+    } else {
+      console.log('SMTP Server is ready')
+    }
+  })
+} else {
+  console.warn('SMTP env vars are missing. Emails will fail until SMTP_HOST, SMTP_USER, and SMTP_PASS are set.')
+}
 
 // ================== BRAND CONFIG ==================
 const brandColor = '#C8FF00'
@@ -102,7 +112,7 @@ body {
 const sendEmail = async ({ to, subject, html, text }) => {
   try {
     const info = await transporter.sendMail({
-      from: `"TimeBound" <${process.env.SMTP_USER}>`,
+      from: smtpFrom,
       to,
       subject,
       html,
