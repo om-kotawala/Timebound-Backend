@@ -1,7 +1,8 @@
 const DATE_ONLY_RE = /^(\d{4})-(\d{2})-(\d{2})$/
 
 const pad = (value) => String(value).padStart(2, '0')
-const DAY_MS = 24 * 60 * 60 * 1000
+const IST_TIMEZONE = 'Asia/Kolkata'
+const IST_OFFSET_MINUTES = -330
 
 const parseDateInput = (value) => {
   if (value instanceof Date) return new Date(value.getTime())
@@ -17,15 +18,44 @@ const parseDateInput = (value) => {
   return Number.isNaN(date.getTime()) ? null : date
 }
 
-const getTimezoneOffsetMinutes = (rawValue) => {
-  const parsed = Number(rawValue)
-  return Number.isFinite(parsed) ? parsed : 0
-}
-
-const shiftDateToClientTimezone = (value, timezoneOffsetMinutes = 0) => {
+const getISTParts = (value) => {
   const date = parseDateInput(value)
   if (!date) return null
-  return new Date(date.getTime() - timezoneOffsetMinutes * 60 * 1000)
+
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: IST_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date)
+
+  return parts.reduce((acc, part) => {
+    if (part.type !== 'literal') acc[part.type] = part.value
+    return acc
+  }, {})
+}
+
+const getTimezoneOffsetMinutes = () => IST_OFFSET_MINUTES
+
+const getDateKey = (value) => {
+  const date = parseDateInput(value)
+  if (!date) return ''
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
+
+const getDateKeyForTimezone = (value) => {
+  const parts = getISTParts(value)
+  if (!parts) return ''
+  return `${parts.year}-${parts.month}-${parts.day}`
+}
+
+const shiftDateToClientTimezone = (value) => {
+  const dateKey = getDateKeyForTimezone(value)
+  if (!dateKey) return null
+  return new Date(`${dateKey}T00:00:00.000+05:30`)
 }
 
 const getStartOfDay = (value) => {
@@ -42,49 +72,45 @@ const getEndOfDay = (value) => {
   return date
 }
 
-const getDateKey = (value) => {
-  const date = parseDateInput(value)
-  if (!date) return ''
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
-}
+const getStartOfDayForTimezone = (value) => {
+  const dateKey = typeof value === 'string' && DATE_ONLY_RE.test(value)
+    ? value
+    : getDateKeyForTimezone(value)
 
-const getDateKeyForTimezone = (value, timezoneOffsetMinutes = 0) => {
-  const shifted = shiftDateToClientTimezone(value, timezoneOffsetMinutes)
-  if (!shifted) return ''
-  return `${shifted.getUTCFullYear()}-${pad(shifted.getUTCMonth() + 1)}-${pad(shifted.getUTCDate())}`
-}
-
-const getStartOfDayForTimezone = (value, timezoneOffsetMinutes = 0) => {
-  const date = parseDateInput(value)
-  if (!date) return null
-
-  const dateKey = getDateKey(value)
   const match = dateKey.match(DATE_ONLY_RE)
   if (!match) return null
 
   const [, year, month, day] = match
-  return new Date(Date.UTC(Number(year), Number(month) - 1, Number(day)) + timezoneOffsetMinutes * 60 * 1000)
+  return new Date(`${year}-${month}-${day}T00:00:00.000+05:30`)
 }
 
-const getEndOfDayForTimezone = (value, timezoneOffsetMinutes = 0) => {
-  const start = getStartOfDayForTimezone(value, timezoneOffsetMinutes)
-  if (!start) return null
-  return new Date(start.getTime() + DAY_MS - 1)
+const getEndOfDayForTimezone = (value) => {
+  const dateKey = typeof value === 'string' && DATE_ONLY_RE.test(value)
+    ? value
+    : getDateKeyForTimezone(value)
+
+  const match = dateKey.match(DATE_ONLY_RE)
+  if (!match) return null
+
+  const [, year, month, day] = match
+  return new Date(`${year}-${month}-${day}T23:59:59.999+05:30`)
 }
 
-const getMonthForTimezone = (value, timezoneOffsetMinutes = 0) => {
-  const shifted = shiftDateToClientTimezone(value, timezoneOffsetMinutes)
-  if (!shifted) return null
-  return shifted.getUTCMonth() + 1
+const getMonthForTimezone = (value) => {
+  const parts = getISTParts(value)
+  return parts ? Number(parts.month) : null
 }
 
-const getDayOfMonthForTimezone = (value, timezoneOffsetMinutes = 0) => {
-  const shifted = shiftDateToClientTimezone(value, timezoneOffsetMinutes)
-  if (!shifted) return null
-  return shifted.getUTCDate()
+const getDayOfMonthForTimezone = (value) => {
+  const parts = getISTParts(value)
+  return parts ? Number(parts.day) : null
 }
+
+const getEndOfTodayInIST = () => getEndOfDayForTimezone(new Date())
 
 module.exports = {
+  IST_TIMEZONE,
+  IST_OFFSET_MINUTES,
   parseDateInput,
   getTimezoneOffsetMinutes,
   shiftDateToClientTimezone,
@@ -96,4 +122,5 @@ module.exports = {
   getEndOfDayForTimezone,
   getMonthForTimezone,
   getDayOfMonthForTimezone,
+  getEndOfTodayInIST,
 }

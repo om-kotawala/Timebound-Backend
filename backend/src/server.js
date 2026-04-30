@@ -5,13 +5,11 @@ const mongoose = require('mongoose')
 const cors = require('cors')
 const cron = require('node-cron')
 
-// Routes
 const authRoutes = require('./routes/auth')
 const profileRoutes = require('./routes/profile')
 const taskRoutes = require('./routes/tasks')
 const progressRoutes = require('./routes/progress')
-
-// Cron services
+const { IST_TIMEZONE } = require('./utils/date')
 const {
   lockExpiredTasks,
   sendDeadlineWarnings,
@@ -20,30 +18,22 @@ const {
 
 const app = express()
 
-// ================== CONFIG ==================
 const PORT = process.env.PORT || 5000
-const MONGO_URI =
-  process.env.MONGODB_URI
-const FRONTEND_URL =
-  process.env.FRONTEND_URL
+const MONGO_URI = process.env.MONGODB_URI
+const FRONTEND_URL = process.env.FRONTEND_URL
 
-// ================== MIDDLEWARE ==================
-app.use(
-  cors({
-    origin: FRONTEND_URL,
-    credentials: true,
-  })
-)
+app.use(cors({
+  origin: FRONTEND_URL,
+  credentials: true,
+}))
 
 app.use(express.json())
 
-// ================== ROUTES ==================
 app.use('/api/auth', authRoutes)
 app.use('/api/profile', profileRoutes)
 app.use('/api/tasks', taskRoutes)
 app.use('/api/progress', progressRoutes)
 
-// ================== HEALTH CHECK ==================
 app.get('/api/health', (_, res) => {
   res.json({
     status: 'ok',
@@ -52,89 +42,73 @@ app.get('/api/health', (_, res) => {
   })
 })
 
-// ================== CRON JOBS ==================
 const startCronJobs = () => {
-  console.log('⏳ Starting cron jobs...')
+  console.log('Starting cron jobs...')
 
-  // 🔒 Every minute → lock expired tasks
   cron.schedule('* * * * *', async () => {
     try {
       await lockExpiredTasks()
     } catch (err) {
-      console.error('❌ lockExpiredTasks failed:', err.message)
+      console.error('lockExpiredTasks failed:', err.message)
     }
-  })
+  }, { timezone: IST_TIMEZONE })
 
-  // ⚠️ 10 PM → deadline warning
   cron.schedule('0 22 * * *', async () => {
-    console.log('⚠️ Running deadline warnings...')
     try {
       await sendDeadlineWarnings()
     } catch (err) {
-      console.error('❌ sendDeadlineWarnings failed:', err.message)
+      console.error('sendDeadlineWarnings failed:', err.message)
     }
-  })
+  }, { timezone: IST_TIMEZONE })
 
-  // 📊 11:59 PM → daily report
   cron.schedule('59 23 * * *', async () => {
-    console.log('📊 Running daily reports...')
     try {
       await sendDailyReports()
     } catch (err) {
-      console.error('❌ sendDailyReports failed:', err.message)
+      console.error('sendDailyReports failed:', err.message)
     }
-  })
+  }, { timezone: IST_TIMEZONE })
 
-  // 📅 Monthly report (last day)
   cron.schedule('59 23 * * *', async () => {
     const today = new Date()
     const tomorrow = new Date(today)
     tomorrow.setDate(today.getDate() + 1)
 
     if (tomorrow.getDate() === 1) {
-      console.log('📅 Running monthly report...')
-      // TODO: add monthly report logic
+      console.log('Monthly report hook pending implementation')
     }
-  })
+  }, { timezone: IST_TIMEZONE })
 
-  // 🎉 Yearly report (Dec 31)
   cron.schedule('59 23 31 12 *', async () => {
-    console.log('🎉 Running yearly report...')
-    // TODO: add yearly report logic
-  })
+    console.log('Yearly report hook pending implementation')
+  }, { timezone: IST_TIMEZONE })
 }
 
-// ================== ERROR HANDLING ==================
 process.on('uncaughtException', (err) => {
-  console.error('❌ Uncaught Exception:', err)
+  console.error('Uncaught Exception:', err)
   process.exit(1)
 })
 
 process.on('unhandledRejection', (err) => {
-  console.error('❌ Unhandled Rejection:', err)
+  console.error('Unhandled Rejection:', err)
 })
 
-// ================== DB CONNECTION ==================
 mongoose
   .connect(MONGO_URI)
   .then(() => {
-    console.log('✅ MongoDB connected')
+    console.log('MongoDB connected')
 
-    // Start server
     const server = app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`)
+      console.log(`Server running on port ${PORT}`)
     })
 
-    // Start cron after DB is ready
     startCronJobs()
 
-    // ================== GRACEFUL SHUTDOWN ==================
     const shutdown = async () => {
-      console.log('🛑 Shutting down server...')
-
+      console.log('Shutting down server...')
       await mongoose.connection.close()
       server.close(() => {
-        console.log('✅ Server closed')
+        console.log('Server closed')
         process.exit(0)
       })
     }
@@ -143,6 +117,6 @@ mongoose
     process.on('SIGTERM', shutdown)
   })
   .catch((err) => {
-    console.error('❌ MongoDB connection failed:', err.message)
+    console.error('MongoDB connection failed:', err.message)
     process.exit(1)
   })

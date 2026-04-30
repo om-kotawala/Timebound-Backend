@@ -1,6 +1,11 @@
 const Task = require('../models/Task')
 const User = require('../models/User')
 const {
+  getDateKeyForTimezone,
+  getStartOfDayForTimezone,
+  getEndOfDayForTimezone,
+} = require('../utils/date')
+const {
   sendDailyReport,
   sendDeadlineWarning,
 } = require('./emailService')
@@ -70,11 +75,9 @@ exports.sendDeadlineWarnings = async () => {
 // ================== DAILY REPORTS ==================
 exports.sendDailyReports = async () => {
   try {
-    const start = new Date()
-    start.setHours(0, 0, 0, 0)
-
-    const end = new Date()
-    end.setHours(23, 59, 59, 999)
+    const todayKey = getDateKeyForTimezone(new Date())
+    const start = getStartOfDayForTimezone(todayKey)
+    const end = getEndOfDayForTimezone(todayKey)
 
     // 🚀 Optimized aggregation instead of loop
     const reports = await Task.aggregate([

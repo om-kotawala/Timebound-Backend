@@ -1,6 +1,21 @@
 
 const mongoose = require('mongoose')
 
+const ProofSubmissionSchema = new mongoose.Schema({
+  fileName: { type: String, trim: true, default: '' },
+  mimeType: { type: String, trim: true, default: '' },
+  size: { type: Number, default: 0 },
+  data: { type: Buffer },
+  submittedAt: { type: Date },
+  status: {
+    type: String,
+    enum: ['pending_review', 'rejected', 'approved'],
+  },
+  rejectionReason: { type: String, trim: true, default: '' },
+  reviewedAt: { type: Date },
+  reviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+}, { _id: false })
+
 const TaskSchema = new mongoose.Schema({
   userId:       { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   createdBy:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -12,6 +27,7 @@ const TaskSchema = new mongoose.Schema({
   creationTime: { type: Date, default: Date.now },
   deadline:     { type: Date, required: true },
   completedAt:  { type: Date },
+  proofSubmission: { type: ProofSubmissionSchema, default: null },
 }, { timestamps: true })
 
 TaskSchema.index({ userId: 1, creationTime: -1 })
