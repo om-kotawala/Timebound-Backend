@@ -2,10 +2,14 @@ const nodemailer = require('nodemailer')
 
 // ================== TRANSPORTER ==================
 const smtpPort = Number(process.env.SMTP_PORT || 587)
-const smtpFrom = process.env.SMTP_FROM || `"TimeBound" <${process.env.SMTP_USER}>`
+const senderName = process.env.BREVO_SENDER_NAME || process.env.EMAIL_SENDER_NAME || 'TimeBound'
+const senderEmail = process.env.BREVO_SENDER_EMAIL || process.env.EMAIL_SENDER_EMAIL || process.env.SMTP_USER
+const smtpFrom = process.env.SMTP_FROM || (senderEmail ? `"${senderName}" <${senderEmail}>` : '')
 const rejectUnauthorized = String(process.env.SMTP_REJECT_UNAUTHORIZED || 'true').trim().toLowerCase() !== 'false'
 const emailProvider = String(process.env.EMAIL_PROVIDER || 'smtp').trim().toLowerCase()
 const brevoApiUrl = 'https://api.brevo.com/v3/smtp/email'
+const isBrevoProvider = emailProvider === 'brevo'
+const hasSmtpConfig = Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS)
 
 const parseSender = (from) => {
   const match = from.match(/^(.*?)\s*<(.+)>$/)
@@ -17,27 +21,33 @@ const parseSender = (from) => {
   }
 }
 
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: smtpPort,
-  secure: smtpPort === 465,
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS,
-  },
-  tls: {
-    rejectUnauthorized,
-  },
-})
+const transporter = hasSmtpConfig
+  ? nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: smtpPort,
+      secure: smtpPort === 465,
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+      tls: {
+        rejectUnauthorized,
+      },
+    })
+  : null
 
-// Verify SMTP connection (run once at startup)
-if (emailProvider === 'brevo') {
-  if (process.env.BREVO_API_KEY) {
-    console.log('Email provider: brevo api')
-  } else {
+// Verify email provider configuration (run once at startup)
+if (isBrevoProvider) {
+  console.log('Email provider: Brevo API')
+
+  if (!process.env.BREVO_API_KEY) {
     console.warn('BREVO_API_KEY is missing. Brevo emails will fail until it is set.')
   }
-} else if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+
+  if (!smtpFrom) {
+    console.warn('Email sender is missing. Set SMTP_FROM or BREVO_SENDER_EMAIL.')
+  }
+} else if (transporter) {
   console.log(`SMTP config: host=${process.env.SMTP_HOST}, port=${smtpPort}, secure=${smtpPort === 465}, rejectUnauthorized=${rejectUnauthorized}`)
 
   transporter.verify((err) => {
@@ -129,7 +139,15 @@ body {
 // ================== GENERIC SEND FUNCTION ==================
 const sendEmail = async ({ to, subject, html, text }) => {
   try {
-    if (emailProvider === 'brevo') {
+    if (isBrevoProvider) {
+      if (!process.env.BREVO_API_KEY) {
+        throw new Error('BREVO_API_KEY is missing')
+      }
+
+      if (!smtpFrom) {
+        throw new Error('Email sender is missing. Set SMTP_FROM or BREVO_SENDER_EMAIL.')
+      }
+
       const response = await fetch(brevoApiUrl, {
         method: 'POST',
         headers: {
@@ -154,6 +172,10 @@ const sendEmail = async ({ to, subject, html, text }) => {
 
       console.log(`📩 Email sent to ${to} | ID: ${result.messageId || result.messageIds?.[0] || 'brevo-api'}`)
       return true
+    }
+
+    if (!transporter) {
+      throw new Error('SMTP transporter is not configured')
     }
 
     const info = await transporter.sendMail({
